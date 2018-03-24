@@ -131,7 +131,7 @@ class App(b2.contactListener):
     def EndContact(self, contact):
         pass
 
-    def on_init(self):
+    def init_screen(self):
         pygame.init()
         self.screen = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
 
@@ -150,8 +150,8 @@ class App(b2.contactListener):
                     self.pressed_keys.remove(self.key_map[event.key])
         return True
 
-    def update(self):
-        self.car.update(self.pressed_keys, self.target_fps)
+    def update(self, pressed_keys):
+        self.car.update(pressed_keys, self.target_fps)
         self.world.Step(self.time_step, 1, 1)
         self.world.ClearForces()
 
@@ -189,14 +189,19 @@ class App(b2.contactListener):
         pygame.quit()
 
     def play(self):
-        self.on_init()
-        running = True
-        while running:
-            running = self.check_events()
+        self.init_screen()
+        while True:
+            if not self.check_events():
+                break
             self.clock.tick(self.target_fps)
-            self.update()
+            self.update(self.pressed_keys)
             self.render()
         self.cleanup()
+
+    def act(self, action):
+        self.update(set([['up', 'down', 'left', 'right'][action]]))
+        # TODO: calculate left / right boundary distance
+        # TODO: construct checkpoints, give a reward if next chechpoint is approached
 
 
 if __name__ == "__main__":
