@@ -1,4 +1,5 @@
 box2d
+numpy
 pycairo
 pygame
 pygobject
