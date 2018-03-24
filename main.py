@@ -126,7 +126,7 @@ class App(b2.contactListener):
         self.pressed_keys = set()
 
     def BeginContact(self, contact):
-        pass
+        self.car.body.linearVelocity *= 0.7
 
     def EndContact(self, contact):
         pass
