@@ -1,0 +1,6 @@
+box2d
+pycairo
+pygame
+pygobject
+shapely
+svgpathtools
