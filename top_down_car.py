@@ -51,7 +51,7 @@ class TDTire(object):
         self.body.ApplyLinearImpulse(self.current_traction * impulse,
                                      self.body.worldCenter, True)
 
-        aimp = 0.1 * self.current_traction * \
+        aimp = self.current_traction * \
             self.body.inertia * -self.body.angularVelocity
         self.body.ApplyAngularImpulse(aimp, True)
 
@@ -119,25 +119,27 @@ class TDTire(object):
 
 
 class TDCar(object):
-    vertices = [(1.5, 0.0),
-                (3.0, 2.5),
-                (2.8, 5.5),
-                (1.0, 10.0),
-                (-1.0, 10.0),
-                (-2.8, 5.5),
-                (-3.0, 2.5),
-                (-1.5, 0.0),
-                ]
+    vertices = [
+        (1.5, -1.5),
+        (3.2, -1.0),
+        (3.2, 11.0),
+        (1.0, 12.5),
+        (-1.0, 12.5),
+        (-3.2, 11.0),
+        (-3.2, -1.0),
+        (-1.5, -1.5),
+    ]
 
-    tire_anchors = [(-3.0, 0.75),
-                    (3.0, 0.75),
-                    (-3.0, 8.50),
-                    (3.0, 8.50),
-                    ]
+    tire_anchors = [
+        (-3.0, 0.5),
+        (3.0, 0.5),
+        (-3.0, 9.0),
+        (3.0, 9.0),
+    ]
 
     def __init__(self, world, vertices=None,
                  tire_anchors=None, density=0.1, position=(0, 0),
-                 **tire_kws):
+                 tire_kwargs=None):
         if vertices is None:
             vertices = TDCar.vertices
 
@@ -145,7 +147,12 @@ class TDCar(object):
         self.body.CreatePolygonFixture(vertices=vertices, density=density)
         self.body.userData = {'obj': self}
 
-        self.tires = [TDTire(self, **tire_kws) for i in range(4)]
+        if tire_kwargs is None:
+            tire_kwargs = {}
+        self.tires = [TDTire(self, **tire_kwargs) for i in range(4)]
+        for tire in self.tires:
+            for fixture in tire.body.fixtures:
+                fixture.sensor = True
 
         if tire_anchors is None:
             anchors = TDCar.tire_anchors
