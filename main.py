@@ -87,12 +87,12 @@ class App(b2.contactListener):
         self.world = b2.world(gravity=(0, 0), doSleep=True)
         self.world.contactListener = self
 
-        boundary = self.world.CreateStaticBody()
-        boundary.CreateEdgeChain([
+        self.boundary = self.world.CreateStaticBody()
+        self.boundary.CreateEdgeChain([
             (x / self.ppm, (self.size[1] - y) / self.ppm)
             for x, y in self.lbound_linestring.coords
         ])
-        boundary.CreateEdgeChain([
+        self.boundary.CreateEdgeChain([
             (x / self.ppm, (self.size[1] - y) / self.ppm)
             for x, y in self.rbound_linestring.coords
         ])
@@ -176,14 +176,49 @@ class App(b2.contactListener):
             ((b.worldCenter[0]) * self.ppm - img.get_rect().center[0],
              (self.size[1] - (b.worldCenter[1]) * self.ppm) - img.get_rect().center[1])
         )
+
         if 'DEBUG' in os.environ:
-            for body in self.world.bodies:
-                for fixture in body.fixtures:
-                    shape = fixture.shape
-                    vertices = [(body.transform * v) * self.ppm for v in shape.vertices]
-                    vertices = [(v[0], self.size[1] - v[1]) for v in vertices]
-                    pygame.draw.aalines(self.screen, (0, 0, 255, 255), True, vertices)
+            self.render_debug()
+
         pygame.display.flip()
+
+    def render_debug(self):
+
+        for body in self.world.bodies:
+            for fixture in body.fixtures:
+                shape = fixture.shape
+                vertices = [(body.transform * v) * self.ppm for v in shape.vertices]
+                vertices = [(v[0], self.size[1] - v[1]) for v in vertices]
+                pygame.draw.lines(self.screen, (0, 0, 255, 255), True, vertices)
+
+        p1 = self.car.body.worldCenter
+        p2 = self.car.tires[2].body.worldCenter
+        pygame.draw.aaline(
+            self.screen, (0, 0, 255, 255),
+            self.b2_to_pygame_point(p1),
+            self.b2_to_pygame_point(p1+(p2-p1)*100),
+        )
+        pygame.draw.circle(
+            self.screen, (255, 0, 0, 255),
+            self.b2_to_pygame_point(self.get_boundary_intersection(p1, p2)),
+            3,
+        )
+
+        p1 = self.car.body.worldCenter
+        p2 = self.car.tires[3].body.worldCenter
+        pygame.draw.aaline(
+            self.screen, (0, 0, 255, 255),
+            self.b2_to_pygame_point(p1),
+            self.b2_to_pygame_point(p1+(p2-p1)*100),
+        )
+        pygame.draw.circle(
+            self.screen, (255, 0, 0, 255),
+            self.b2_to_pygame_point(self.get_boundary_intersection(p1, p2)),
+            3,
+        )
+
+    def b2_to_pygame_point(self, p):
+        return (int(p[0] * self.ppm), int(self.size[1] - p[1] * self.ppm))
 
     def cleanup(self):
         pygame.quit()
@@ -200,8 +235,33 @@ class App(b2.contactListener):
 
     def act(self, action):
         self.update(set([['up', 'down', 'left', 'right'][action]]))
-        # TODO: calculate left / right boundary distance
+        left = self.get_boundary_intersection(
+            self.car.body.worldCenter,
+            self.car.tires[2].body.worldCenter
+        )
+        right = self.get_boundary_intersection(
+            self.car.body.worldCenter,
+            self.car.tires[3].body.worldCenter
+        )
+        obs = (left.length, right.length, self.car.body.velocity)
         # TODO: construct checkpoints, give a reward if next chechpoint is approached
+        reward = 0
+        finish = False
+        return reward, obs, finish
+
+    def get_boundary_intersection(self, p1, p2):
+        input = b2.rayCastInput(p1=p1, p2=p2, maxFraction=100)
+        output = b2.rayCastOutput()
+        closest_fraction = None
+        closest_point = None
+        for i in self.boundary.fixtures:
+            if i.RayCast(output, input, 0):
+                hit_point = input.p1 + output.fraction * (input.p2 - input.p1)
+                logging.debug('hit_point: %r', hit_point)
+                if closest_point is None or closest_fraction > output.fraction:
+                    closest_point = hit_point
+                    closest_fraction = output.fraction
+        return closest_point
 
 
 if __name__ == "__main__":
