@@ -105,9 +105,10 @@ class App(b2.contactListener):
             (x / self.ppm, (self.size[1] - y) / self.ppm)
             for x, y in self.rbound_linestring.coords
         ])
-        # TODO: implement ground
-        # for i in boundary.fixtures:
-        #     i.sensor = True
+        for i in self.boundary.fixtures:
+            # TODO: implement ground
+            # i.sensor = True
+            i.friction = 0.9
 
         self.car = None
         self.init_car()
@@ -121,7 +122,7 @@ class App(b2.contactListener):
         self.pressed_keys = set()
 
     def BeginContact(self, contact):
-        self.car.body.linearVelocity *= 0.1
+        pass
 
     def EndContact(self, contact):
         pass

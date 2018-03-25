@@ -142,7 +142,7 @@ class TDCar(object):
             vertices = TDCar.vertices
 
         self.body = world.CreateDynamicBody(position=position)
-        self.body.CreatePolygonFixture(vertices=vertices, density=density)
+        self.body.CreatePolygonFixture(vertices=vertices, density=density, friction=0.9)
         self.body.userData = {'obj': self}
 
         if tire_kwargs is None:
@@ -173,6 +173,11 @@ class TDCar(object):
             joints.append(j)
 
     def update(self, keys, hz):
+
+        for edge in self.body.contacts:
+            if edge.contact.touching:
+                self.body.linearVelocity *= (1. - edge.contact.friction)
+
         for tire in self.tires:
             tire.update_friction()
 
