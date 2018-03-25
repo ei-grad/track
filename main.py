@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import logging
 import math
@@ -20,9 +20,6 @@ from gi.repository import Rsvg
 from svgpathtools import svg2paths
 
 from top_down_car import TDCar
-
-
-logging.basicConfig(level=logging.DEBUG)
 
 
 def load_svg(filename):
@@ -84,6 +81,13 @@ class App(b2.contactListener):
         self.lbound_linestring = traced_path(self.svg_paths['lbound'])
         self.rbound_linestring = traced_path(self.svg_paths['rbound'])
 
+        self.checkpoints = [
+            b2.vec2(i.start.real / self.ppm,
+                    (self.size[1] - i.start.imag) / self.ppm)
+            for i in self.svg_paths['track']
+        ]
+        self.checkpoint_radius = 20.
+
         self.world = b2.world(gravity=(0, 0), doSleep=True)
         self.world.contactListener = self
 
@@ -100,18 +104,8 @@ class App(b2.contactListener):
         # for i in boundary.fixtures:
         #     i.sensor = True
 
-        self.car = TDCar(
-            self.world,
-            position=b2.vec2(self.start_coord.x / self.ppm,
-                             (self.size[1] - self.start_coord.y) / self.ppm),
-            tire_kwargs=dict(
-                dimensions=(0.2, 0.8),
-                max_forward_speed=200.0,
-                max_backward_speed=-80.,
-                max_drive_force=300.,
-            ),
-            density=0.08,
-        )
+        self.car = None
+        self.init_car()
 
         # TODO: make front-wheel / rear drive switch
         # self.car.tires[0].max_drive_force = self.car.tires[1].max_drive_force = 0
@@ -134,6 +128,26 @@ class App(b2.contactListener):
     def init_screen(self):
         pygame.init()
         self.screen = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
+
+    def init_car(self):
+
+        if self.car is not None:
+            self.car.destroy()
+
+        self.car = TDCar(
+            self.world,
+            position=b2.vec2(self.start_coord.x / self.ppm,
+                             (self.size[1] - self.start_coord.y) / self.ppm),
+            tire_kwargs=dict(
+                dimensions=(0.2, 0.8),
+                max_forward_speed=200.0,
+                max_backward_speed=-80.,
+                max_drive_force=300.,
+            ),
+            density=0.08,
+        )
+        self.car.next_checkpoint = 1
+        self.car.laps = 0
 
     def check_events(self):
         for event in pygame.event.get():
@@ -217,6 +231,22 @@ class App(b2.contactListener):
             3,
         )
 
+        for n, i in enumerate(self.checkpoints):
+            if n == self.car.next_checkpoint:
+                color = (0, 255, 0, 255)
+            else:
+                color = (255, 0, 0, 255)
+            pygame.draw.circle(
+                self.screen, color,
+                self.b2_to_pygame_point(i),
+                int(self.checkpoint_radius * self.ppm),
+                1
+            )
+
+        font = pygame.font.Font(None, 30)
+        fps = font.render(str(int(self.clock.get_fps())), True, pygame.Color('white'))
+        self.screen.blit(fps, (50, 50))
+
     def b2_to_pygame_point(self, p):
         return (int(p[0] * self.ppm), int(self.size[1] - p[1] * self.ppm))
 
@@ -233,8 +263,17 @@ class App(b2.contactListener):
             self.render()
         self.cleanup()
 
-    def act(self, action):
+    def execute(self, action):
         self.update(set([['up', 'down', 'left', 'right'][action]]))
+        d = self.checkpoints[self.car.next_checkpoint] - self.car.body.worldCenter
+        if d.length < self.checkpoint_radius:
+            self.car.next_checkpoint = (self.car.next_checkpoint + 1) % len(self.checkpoints)
+            if self.car.next_checkpoint == 0:
+                self.car.laps += 1
+            return 1
+        return 0
+
+    def get_state(self):
         left = self.get_boundary_intersection(
             self.car.body.worldCenter,
             self.car.tires[2].body.worldCenter
@@ -243,11 +282,13 @@ class App(b2.contactListener):
             self.car.body.worldCenter,
             self.car.tires[3].body.worldCenter
         )
-        obs = (left.length, right.length, self.car.body.velocity)
-        # TODO: construct checkpoints, give a reward if next chechpoint is approached
-        reward = 0
-        finish = False
-        return reward, obs, finish
+        b = self.car.body
+        return (
+            (b.worldCenter - left).length,
+            (b.worldCenter - right).length,
+            b.GetWorldVector((0, 1)).dot(b.linearVelocity),
+            b.GetWorldVector((1, 0)).dot(b.linearVelocity),
+        )
 
     def get_boundary_intersection(self, p1, p2):
         input = b2.rayCastInput(p1=p1, p2=p2, maxFraction=100)
@@ -257,7 +298,6 @@ class App(b2.contactListener):
         for i in self.boundary.fixtures:
             if i.RayCast(output, input, 0):
                 hit_point = input.p1 + output.fraction * (input.p2 - input.p1)
-                logging.debug('hit_point: %r', hit_point)
                 if closest_point is None or closest_fraction > output.fraction:
                     closest_point = hit_point
                     closest_fraction = output.fraction
@@ -265,5 +305,6 @@ class App(b2.contactListener):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     app = App()
     app.play()

@@ -140,6 +140,9 @@ class TDCar(object):
     def __init__(self, world, vertices=None,
                  tire_anchors=None, density=0.1, position=(0, 0),
                  tire_kwargs=None):
+
+        self.world = world
+
         if vertices is None:
             vertices = TDCar.vertices
 
@@ -207,3 +210,8 @@ class TDCar(object):
         # Rotate the tires by locking the limits:
         front_left_joint.SetLimits(new_angle, new_angle)
         front_right_joint.SetLimits(new_angle, new_angle)
+
+    def destroy(self):
+        for i in self.tires:
+            self.world.DestroyBody(i.body)
+        self.world.DestroyBody(self.body)
