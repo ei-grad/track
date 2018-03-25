@@ -9,6 +9,10 @@ from tensorforce.agents import Agent
 from main import App
 
 
+app = App()
+app.init_screen()
+app.render()
+
 config = json.load(open(getenv('CONFIG', 'ppo.json')))
 max_episodes = config.pop('max_episodes', None)
 max_timesteps = config.pop('max_timesteps', None)
@@ -18,17 +22,16 @@ network_spec = config.pop('network')
 agent = Agent.from_spec(
     spec=config,
     kwargs=dict(
-        states=dict(type='float', shape=(4,)),
-        actions=dict(type='int', num_actions=4),
+        states=dict(type='float', shape=(app.num_rays + 4,)),
+        actions={
+            'accel': dict(type='int', num_actions=3),
+            'turn': dict(type='int', num_actions=3),
+        },
         network=network_spec
     )
 )
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-
-app = App()
-app.init_screen()
-app.render()
 
 episode = 0
 
@@ -44,8 +47,8 @@ while True:
     while not terminal:
         frames += 1
         state = app.get_state()
-        action = agent.act(state)
-        reward = app.execute(action)
+        actions = agent.act(state)
+        reward = app.execute(actions)
         if reward:
             reward = 1. - frames_without_reward / MAX_FRAMES_WITHOUT_REWARD
             frames_without_reward = 0

@@ -14,7 +14,7 @@ class TDTire(object):
                  max_backward_speed=-20, max_drive_force=150,
                  turn_torque=15, max_lateral_impulse=3,
                  dimensions=(0.5, 1.25), density=1.0,
-                 position=(0, 0)):
+                 position=(0, 0), angle=0):
 
         world = car.body.world
 
@@ -26,7 +26,7 @@ class TDTire(object):
         self.max_lateral_impulse = max_lateral_impulse
         self.ground_areas = []
 
-        self.body = world.CreateDynamicBody(position=position)
+        self.body = world.CreateDynamicBody(position=position, angle=angle)
         self.body.CreatePolygonFixture(box=dimensions, density=density)
         self.body.userData = {'obj': self}
 
@@ -76,7 +76,10 @@ class TDTire(object):
         current_speed = current_forward_normal.dot(self.body.linearVelocity)
 
         # apply necessary force
-        force = self.max_drive_force * (desired_speed - current_speed) / abs(desired_speed)
+        ds = abs(desired_speed - current_speed)
+        if ds > abs(desired_speed):
+            ds = abs(desired_speed)
+        force = self.max_drive_force * ds / desired_speed
 
         self.body.ApplyForce(self.current_traction * force * current_forward_normal,
                              self.body.worldCenter, True)
@@ -133,7 +136,8 @@ class TDCar(object):
     ]
 
     def __init__(self, world, vertices=None,
-                 tire_anchors=None, density=0.1, position=(0, 0),
+                 tire_anchors=None, density=0.1,
+                 position=(0, 0), angle=0.,
                  tire_kwargs=None):
 
         self.world = world
@@ -141,13 +145,17 @@ class TDCar(object):
         if vertices is None:
             vertices = TDCar.vertices
 
-        self.body = world.CreateDynamicBody(position=position)
+        self.body = world.CreateDynamicBody(position=position, angle=angle)
         self.body.CreatePolygonFixture(vertices=vertices, density=density, friction=0.9)
         self.body.userData = {'obj': self}
 
         if tire_kwargs is None:
             tire_kwargs = {}
-        self.tires = [TDTire(self, **tire_kwargs) for i in range(4)]
+        self.tires = [
+            TDTire(self, position=self.body.transform * i, angle=angle,
+                   **tire_kwargs)
+            for i in self.tire_anchors
+        ]
         for tire in self.tires:
             for fixture in tire.body.fixtures:
                 fixture.sensor = True
@@ -157,19 +165,18 @@ class TDCar(object):
 
         joints = self.joints = []
         for tire, anchor in zip(self.tires, anchors):
-            j = world.CreateRevoluteJoint(bodyA=self.body,
-                                          bodyB=tire.body,
-                                          localAnchorA=anchor,
-                                          # center of tire
-                                          localAnchorB=(0, 0),
-                                          enableMotor=False,
-                                          maxMotorTorque=1000,
-                                          enableLimit=True,
-                                          lowerAngle=0,
-                                          upperAngle=0,
-                                          )
-
-            tire.body.position = self.body.worldCenter + anchor
+            j = world.CreateRevoluteJoint(
+                bodyA=self.body,
+                bodyB=tire.body,
+                localAnchorA=anchor,
+                # center of tire
+                localAnchorB=(0, 0),
+                enableMotor=False,
+                maxMotorTorque=1000,
+                enableLimit=True,
+                lowerAngle=0,
+                upperAngle=0,
+            )
             joints.append(j)
 
     def update(self, keys, hz):

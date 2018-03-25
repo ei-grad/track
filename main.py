@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import random
 import logging
 import math
 import os
@@ -70,7 +71,7 @@ class App(b2.contactListener):
 
         self.size = self.weight, self.height = self.track_image.get_size()
         self.ppm = 2.7
-        self.target_fps = 60
+        self.target_fps = 20
         self.time_step = 1. / self.target_fps
         self.clock = pygame.time.Clock()
 
@@ -80,6 +81,8 @@ class App(b2.contactListener):
         self.start_coord = Point(track_start.real, track_start.imag)
         self.lbound_linestring = traced_path(self.svg_paths['lbound'])
         self.rbound_linestring = traced_path(self.svg_paths['rbound'])
+
+        self.num_rays = 8
 
         # self.checkpoints = [
         #     b2.vec2(i.start.real / self.ppm,
@@ -140,11 +143,12 @@ class App(b2.contactListener):
             self.world,
             position=b2.vec2(self.start_coord.x / self.ppm,
                              (self.size[1] - self.start_coord.y) / self.ppm),
+            angle=random.random() * math.pi * 2.,
             tire_kwargs=dict(
                 dimensions=(0.2, 0.8),
-                max_forward_speed=200.0,
-                max_backward_speed=-80.,
-                max_drive_force=300.,
+                max_forward_speed=40.0,
+                max_backward_speed=-10.0,
+                max_drive_force=280.,
             ),
             density=0.08,
         )
@@ -173,6 +177,11 @@ class App(b2.contactListener):
 
     def update(self, pressed_keys):
         self.car.update(pressed_keys, self.target_fps)
+        d = self.checkpoints[self.car.next_checkpoint] - self.car.body.worldCenter
+        if d.length < self.checkpoint_radius:
+            self.car.next_checkpoint = (self.car.next_checkpoint + 1) % len(self.checkpoints)
+            if self.car.next_checkpoint == 0:
+                self.car.laps += 1
         self.world.Step(self.time_step, 1, 1)
         self.world.ClearForces()
 
@@ -212,8 +221,8 @@ class App(b2.contactListener):
                 vertices = [(v[0], self.size[1] - v[1]) for v in vertices]
                 pygame.draw.lines(self.screen, (0, 0, 255, 255), True, vertices)
 
-        self.draw_ray(*self.get_ray(0))
-        self.draw_ray(*self.get_ray(1))
+        for p0, p1 in self.get_rays():
+            self.draw_ray(p0, p1)
 
         for n, i in enumerate(self.checkpoints):
             if n == self.car.next_checkpoint:
@@ -227,13 +236,18 @@ class App(b2.contactListener):
                 1
             )
 
-        font = pygame.font.Font(None, 30)
-        fps = font.render("FPS:%d %.2f %.2f %.2f %.2f" % ((self.clock.get_fps(),) + self.get_state()),
-                          True, pygame.Color('white'))
-        self.screen.blit(fps, (50, 50))
+        font = pygame.font.Font(None, 20)
+        state = self.get_state()
+        fmt = "STATE: " + " ".join("%.2f" for i in range(len(state)))
+        self.screen.blit(font.render(
+            fmt % state, True, pygame.Color('white')
+        ), (20, 20))
+        self.screen.blit(font.render(
+            "FPS: %d" % self.clock.get_fps(), True, pygame.Color('white')
+        ), (20, 40))
 
     def draw_ray(self, p0, p1):
-        pygame.draw.aaline(
+        pygame.draw.line(
             self.screen, (0, 0, 255, 255),
             self.b2_to_pygame_point(p0),
             self.b2_to_pygame_point(p0+(p1-p0)),
@@ -262,39 +276,65 @@ class App(b2.contactListener):
             self.render()
         self.cleanup()
 
-    def execute(self, action):
-        self.update(set([['up', 'down', 'left', 'right'][action]]))
-        d = self.checkpoints[self.car.next_checkpoint] - self.car.body.worldCenter
-        if d.length < self.checkpoint_radius:
-            self.car.next_checkpoint = (self.car.next_checkpoint + 1) % len(self.checkpoints)
-            if self.car.next_checkpoint == 0:
-                self.car.laps += 1
+    def execute(self, actions):
+        buttons = set()
+        if actions['accel'] == 1:
+            buttons.add('up')
+        elif actions['accel'] == 2:
+            buttons.add('down')
+        if actions['turn'] == 1:
+            buttons.add('left')
+        elif actions['turn'] == 2:
+            buttons.add('right')
+        checkpoint = self.car.next_checkpoint
+        self.update(buttons)
+        if checkpoint != self.car.next_checkpoint:
             return 1
         return 0
 
-    def get_ray(self, num):
-        if num:
-            b = self.car.tires[3].body
-            x = math.radians(20)
-        else:
-            b = self.car.tires[2].body
-            x = math.radians(-20)
-        v = self.car.body.GetWorldVector((100. * math.sin(x), 100. * math.cos(x)))
+    def get_rays(self):
+        return [self.get_ray(i) for i in np.linspace(0, 2.0 * math.pi, self.num_rays, False)]
+
+    def get_ray(self, x):
+        b = self.car.body
+        v = b.GetWorldVector((100. * math.sin(x), 100. * math.cos(x)))
         return b.worldCenter, b.worldCenter + v
 
     def get_state(self):
+
         ret = []
-        for i in (0, 1):
-            p0, p1 = self.get_ray(i)
+
+        max_speed = self.car.tires[0].max_forward_speed
+        b = self.car.body
+
+        # state[0] - forward speed
+        ret.append(b.GetWorldVector((0, 1)).dot(b.linearVelocity) / max_speed)
+
+        # state[1] - lateral speed
+        ret.append(b.GetWorldVector((1, 0)).dot(b.linearVelocity) / max_speed)
+
+        # state[2] - angular speed
+        ret.append(b.angularVelocity)
+
+        # state[3] - angle to checkpoint
+        cp_x, cp_y = self.checkpoints[self.car.next_checkpoint] - b.position
+        cp_angle = math.atan2(cp_y, cp_x)
+        b_angle = (b.angle + math.pi / 2.) % (math.pi * 2.)
+        if b_angle > math.pi:
+            b_angle = - (math.pi * 2 - b_angle)
+        angle = cp_angle - b_angle
+        if angle > math.pi:
+            angle = - (math.pi * 2 - angle)
+        ret.append(angle / math.pi)
+
+        # distances to track boundary
+        for p0, p1 in self.get_rays():
             p2, frac = self.get_boundary_intersection(p0, p1)
             if p2 is not None:
                 ret.append(frac)
             else:
                 ret.append(1.0)
-        b = self.car.body
-        max_speed = self.car.tires[0].max_forward_speed
-        ret.append(b.GetWorldVector((0, 1)).dot(b.linearVelocity) / max_speed)
-        ret.append(b.GetWorldVector((1, 0)).dot(b.linearVelocity) / max_speed)
+
         return tuple(ret)
 
     def get_boundary_intersection(self, p1, p2):
