@@ -63,6 +63,7 @@ class TDTire(object):
                              self.body.worldCenter, True)
 
     def update_drive(self, keys):
+
         if 'up' in keys:
             desired_speed = self.max_forward_speed
         elif 'down' in keys:
@@ -72,16 +73,10 @@ class TDTire(object):
 
         # find the current speed in the forward direction
         current_forward_normal = self.body.GetWorldVector((0, 1))
-        current_speed = self.forward_velocity.dot(current_forward_normal)
+        current_speed = current_forward_normal.dot(self.body.linearVelocity)
 
         # apply necessary force
-        force = 0.0
-        if desired_speed > current_speed:
-            force = self.max_drive_force
-        elif desired_speed < current_speed:
-            force = -self.max_drive_force
-        else:
-            return
+        force = self.max_drive_force * (desired_speed - current_speed) / abs(desired_speed)
 
         self.body.ApplyForce(self.current_traction * force * current_forward_normal,
                              self.body.worldCenter, True)
