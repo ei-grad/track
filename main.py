@@ -112,10 +112,6 @@ class App(b2.contactListener):
         self.car = None
         self.init_car()
 
-        # TODO: make front-wheel / rear drive switch
-        # self.car.tires[0].max_drive_force = self.car.tires[1].max_drive_force = 0
-        # self.car.tires[2].max_drive_force = self.car.tires[3].max_drive_force = 0
-
         self.key_map = {
             pygame.K_w: 'up',
             pygame.K_s: 'down',
@@ -151,6 +147,11 @@ class App(b2.contactListener):
             ),
             density=0.08,
         )
+
+        # TODO: make front-wheel / rear drive switch
+        # self.car.tires[0].max_drive_force = self.car.tires[1].max_drive_force = 0
+        # self.car.tires[2].max_drive_force = self.car.tires[3].max_drive_force = 0
+
         self.car.next_checkpoint = 1
         self.car.laps = 0
 
