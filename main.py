@@ -322,7 +322,7 @@ class App(b2.contactListener):
         b_angle = (b.angle + math.pi / 2.) % (math.pi * 2.)
         if b_angle > math.pi:
             b_angle = - (math.pi * 2 - b_angle)
-        angle = cp_angle - b_angle
+        angle = (cp_angle - b_angle) % (math.pi * 2)
         if angle > math.pi:
             angle = - (math.pi * 2 - angle)
         ret.append(angle / math.pi)
