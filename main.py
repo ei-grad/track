@@ -81,10 +81,15 @@ class App(b2.contactListener):
         self.lbound_linestring = traced_path(self.svg_paths['lbound'])
         self.rbound_linestring = traced_path(self.svg_paths['rbound'])
 
+        # self.checkpoints = [
+        #     b2.vec2(i.start.real / self.ppm,
+        #             (self.size[1] - i.start.imag) / self.ppm)
+        #     for i in self.svg_paths['track']
+        # ]
         self.checkpoints = [
-            b2.vec2(i.start.real / self.ppm,
-                    (self.size[1] - i.start.imag) / self.ppm)
-            for i in self.svg_paths['track']
+            b2.vec2(i.real / self.ppm,
+                    (self.size[1] - i.imag) / self.ppm)
+            for i in [self.svg_paths['track'].point(i) for i in np.linspace(0, 1)]
         ]
         self.checkpoint_radius = 20.
 
@@ -205,31 +210,8 @@ class App(b2.contactListener):
                 vertices = [(v[0], self.size[1] - v[1]) for v in vertices]
                 pygame.draw.lines(self.screen, (0, 0, 255, 255), True, vertices)
 
-        p1 = self.car.body.worldCenter
-        p2 = self.car.tires[2].body.worldCenter
-        pygame.draw.aaline(
-            self.screen, (0, 0, 255, 255),
-            self.b2_to_pygame_point(p1),
-            self.b2_to_pygame_point(p1+(p2-p1)*100),
-        )
-        pygame.draw.circle(
-            self.screen, (255, 0, 0, 255),
-            self.b2_to_pygame_point(self.get_boundary_intersection(p1, p2)),
-            3,
-        )
-
-        p1 = self.car.body.worldCenter
-        p2 = self.car.tires[3].body.worldCenter
-        pygame.draw.aaline(
-            self.screen, (0, 0, 255, 255),
-            self.b2_to_pygame_point(p1),
-            self.b2_to_pygame_point(p1+(p2-p1)*100),
-        )
-        pygame.draw.circle(
-            self.screen, (255, 0, 0, 255),
-            self.b2_to_pygame_point(self.get_boundary_intersection(p1, p2)),
-            3,
-        )
+        self.draw_ray(*self.get_ray(0))
+        self.draw_ray(*self.get_ray(1))
 
         for n, i in enumerate(self.checkpoints):
             if n == self.car.next_checkpoint:
@@ -244,8 +226,23 @@ class App(b2.contactListener):
             )
 
         font = pygame.font.Font(None, 30)
-        fps = font.render(str(int(self.clock.get_fps())), True, pygame.Color('white'))
+        fps = font.render("FPS:%d %.2f %.2f %.2f %.2f" % ((self.clock.get_fps(),) + self.get_state()),
+                          True, pygame.Color('white'))
         self.screen.blit(fps, (50, 50))
+
+    def draw_ray(self, p0, p1):
+        pygame.draw.aaline(
+            self.screen, (0, 0, 255, 255),
+            self.b2_to_pygame_point(p0),
+            self.b2_to_pygame_point(p0+(p1-p0)),
+        )
+        p2, _ = self.get_boundary_intersection(p0, p1)
+        if p2 is not None:
+            pygame.draw.circle(
+                self.screen, (255, 0, 0, 255),
+                self.b2_to_pygame_point(p2),
+                3,
+            )
 
     def b2_to_pygame_point(self, p):
         return (int(p[0] * self.ppm), int(self.size[1] - p[1] * self.ppm))
@@ -273,25 +270,33 @@ class App(b2.contactListener):
             return 1
         return 0
 
+    def get_ray(self, num):
+        if num:
+            b = self.car.tires[3].body
+            x = math.radians(20)
+        else:
+            b = self.car.tires[2].body
+            x = math.radians(-20)
+        v = self.car.body.GetWorldVector((100. * math.sin(x), 100. * math.cos(x)))
+        return b.worldCenter, b.worldCenter + v
+
     def get_state(self):
-        left = self.get_boundary_intersection(
-            self.car.body.worldCenter,
-            self.car.tires[2].body.worldCenter
-        )
-        right = self.get_boundary_intersection(
-            self.car.body.worldCenter,
-            self.car.tires[3].body.worldCenter
-        )
+        ret = []
+        for i in (0, 1):
+            p0, p1 = self.get_ray(i)
+            p2, frac = self.get_boundary_intersection(p0, p1)
+            if p2 is not None:
+                ret.append(frac)
+            else:
+                ret.append(1.0)
         b = self.car.body
-        return (
-            (b.worldCenter - left).length,
-            (b.worldCenter - right).length,
-            b.GetWorldVector((0, 1)).dot(b.linearVelocity),
-            b.GetWorldVector((1, 0)).dot(b.linearVelocity),
-        )
+        max_speed = self.car.tires[0].max_forward_speed
+        ret.append(b.GetWorldVector((0, 1)).dot(b.linearVelocity) / max_speed)
+        ret.append(b.GetWorldVector((1, 0)).dot(b.linearVelocity) / max_speed)
+        return tuple(ret)
 
     def get_boundary_intersection(self, p1, p2):
-        input = b2.rayCastInput(p1=p1, p2=p2, maxFraction=100)
+        input = b2.rayCastInput(p1=p1, p2=p2, maxFraction=1)
         output = b2.rayCastOutput()
         closest_fraction = None
         closest_point = None
@@ -301,7 +306,7 @@ class App(b2.contactListener):
                 if closest_point is None or closest_fraction > output.fraction:
                     closest_point = hit_point
                     closest_fraction = output.fraction
-        return closest_point
+        return closest_point, closest_fraction
 
 
 if __name__ == "__main__":
