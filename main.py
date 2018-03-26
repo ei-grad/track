@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import random
+from os import getenv
 import logging
 import math
 import os
@@ -61,12 +61,12 @@ def rot_center(image, angle):
 
 
 class App(b2.contactListener):
-    def __init__(self):
+    def __init__(self, track_filename=getenv('TRACK', 'track.svg')):
         super(App, self).__init__()
 
         self.screen = None
 
-        self.track_image = load_svg('track.svg')
+        self.track_image = load_svg(track_filename)
         self.car_image = load_svg('car.svg')
 
         self.size = self.weight, self.height = self.track_image.get_size()
@@ -75,14 +75,27 @@ class App(b2.contactListener):
         self.time_step = 1. / self.target_fps
         self.clock = pygame.time.Clock()
 
-        paths, attributes = svg2paths('track.svg')
+        paths, attributes = svg2paths(track_filename)
         self.svg_paths = {j['id']: i for i, j in zip(paths, attributes)}
         track_start = self.svg_paths['track'].start
         self.start_coord = Point(track_start.real, track_start.imag)
         self.lbound_linestring = traced_path(self.svg_paths['lbound'])
         self.rbound_linestring = traced_path(self.svg_paths['rbound'])
 
-        self.num_rays = 8
+        self.ray_angles = [
+            0, 180,
+            10, -10,
+            90, -90,
+            30, -30,
+            45, -45,
+            135, -135,
+        ]
+        self.ray_length = 100.
+        self.rays = [
+            b2.vec2(self.ray_length * math.sin(x),
+                    self.ray_length * math.cos(x))
+            for x in [math.radians(i) for i in self.ray_angles]
+        ]
 
         # self.checkpoints = [
         #     b2.vec2(i.start.real / self.ppm,
@@ -92,7 +105,8 @@ class App(b2.contactListener):
         self.checkpoints = [
             b2.vec2(i.real / self.ppm,
                     (self.size[1] - i.imag) / self.ppm)
-            for i in [self.svg_paths['track'].point(i) for i in np.linspace(0, 1)]
+            for i in [self.svg_paths['track'].point(i)
+                      for i in np.linspace(0, 1, endpoint=False)]
         ]
         self.checkpoint_radius = 20.
 
@@ -139,11 +153,16 @@ class App(b2.contactListener):
         if self.car is not None:
             self.car.destroy()
 
+        # XXX: make random switch
+        # angle = np.random() * math.pi * 2.
+        p = self.checkpoints[1] - self.checkpoints[0]
+        angle = math.atan2(p.y, p.x) - math.pi / 2.
+
         self.car = TDCar(
             self.world,
             position=b2.vec2(self.start_coord.x / self.ppm,
                              (self.size[1] - self.start_coord.y) / self.ppm),
-            angle=random.random() * math.pi * 2.,
+            angle=angle,
             tire_kwargs=dict(
                 dimensions=(0.2, 0.8),
                 max_forward_speed=40.0,
@@ -151,6 +170,7 @@ class App(b2.contactListener):
                 max_drive_force=280.,
             ),
             density=0.08,
+            rays=self.rays,
         )
 
         # TODO: make front-wheel / rear drive switch
@@ -221,7 +241,7 @@ class App(b2.contactListener):
                 vertices = [(v[0], self.size[1] - v[1]) for v in vertices]
                 pygame.draw.lines(self.screen, (0, 0, 255, 255), True, vertices)
 
-        for p0, p1 in self.get_rays():
+        for p0, p1 in self.car.rays:
             self.draw_ray(p0, p1)
 
         for n, i in enumerate(self.checkpoints):
@@ -250,7 +270,7 @@ class App(b2.contactListener):
         pygame.draw.line(
             self.screen, (0, 0, 255, 255),
             self.b2_to_pygame_point(p0),
-            self.b2_to_pygame_point(p0+(p1-p0)),
+            self.b2_to_pygame_point(p1),
         )
         p2, _ = self.get_boundary_intersection(p0, p1)
         if p2 is not None:
@@ -292,20 +312,13 @@ class App(b2.contactListener):
             return 1
         return 0
 
-    def get_rays(self):
-        return [self.get_ray(i) for i in np.linspace(0, 2.0 * math.pi, self.num_rays, False)]
-
-    def get_ray(self, x):
-        b = self.car.body
-        v = b.GetWorldVector((100. * math.sin(x), 100. * math.cos(x)))
-        return b.worldCenter, b.worldCenter + v
-
     def get_state(self):
 
         ret = []
 
         max_speed = self.car.tires[0].max_forward_speed
         b = self.car.body
+        cp = self.checkpoints[self.car.next_checkpoint] - b.position
 
         # state[0] - forward speed
         ret.append(b.GetWorldVector((0, 1)).dot(b.linearVelocity) / max_speed)
@@ -316,9 +329,11 @@ class App(b2.contactListener):
         # state[2] - angular speed
         ret.append(b.angularVelocity)
 
-        # state[3] - angle to checkpoint
-        cp_x, cp_y = self.checkpoints[self.car.next_checkpoint] - b.position
-        cp_angle = math.atan2(cp_y, cp_x)
+        # state[3] - distance to checkpoint
+        ret.append(min(cp.length - self.checkpoint_radius, self.ray_length) / self.ray_length)
+
+        # state[4] - angle to checkpoint
+        cp_angle = math.atan2(cp.y, cp.x)
         b_angle = (b.angle + math.pi / 2.) % (math.pi * 2.)
         if b_angle > math.pi:
             b_angle = - (math.pi * 2 - b_angle)
@@ -328,7 +343,7 @@ class App(b2.contactListener):
         ret.append(angle / math.pi)
 
         # distances to track boundary
-        for p0, p1 in self.get_rays():
+        for p0, p1 in self.car.rays:
             p2, frac = self.get_boundary_intersection(p0, p1)
             if p2 is not None:
                 ret.append(frac)

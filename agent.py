@@ -22,7 +22,7 @@ network_spec = config.pop('network')
 agent = Agent.from_spec(
     spec=config,
     kwargs=dict(
-        states=dict(type='float', shape=(app.num_rays + 4,)),
+        states=dict(type='float', shape=(len(app.get_state()),)),
         actions={
             'accel': dict(type='int', num_actions=3),
             'turn': dict(type='int', num_actions=3),
@@ -35,15 +35,16 @@ logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
 
 episode = 0
 
-MAX_FRAMES_WITHOUT_REWARD = 50.
+MAX_FRAMES_WITHOUT_REWARD = 200.
 
 while True:
     episode += 1
-    render = episode % 20 == 0
     app.init_car()
     frames_without_reward = 0
     terminal = False
     frames = 0
+    # XXX: make random switch
+    # app.checkpoints = app.checkpoints[::-1]
     while not terminal:
         frames += 1
         state = app.get_state()
@@ -54,18 +55,17 @@ while True:
             frames_without_reward = 0
             logging.info('Episode#%d: checkpoint #%d on frame %d reward %.2f', episode,
                          app.car.next_checkpoint - 1, frames, reward)
-            if app.car.laps > 0:
+            if app.car.laps == 3:
                 terminal = True
                 logging.info('Episode#%d: finish on frame %d', episode, frames)
         else:
             frames_without_reward += 1
-        if render:
-            if frames % 5 == 0:
-                logging.info('state: %r', state)
-            app.clock.tick(app.target_fps)
+        app.clock.tick(0)
+        if frames % 20 == 0:
             app.render()
         # if frames_without_reward > MAX_FRAMES_WITHOUT_REWARD or app.car.body.contacts:
-        if frames_without_reward > MAX_FRAMES_WITHOUT_REWARD:
+        has_contact = any(i.contact.touching for i in app.car.body.contacts)
+        if frames_without_reward > MAX_FRAMES_WITHOUT_REWARD or has_contact:
             terminal = True
             reward = -1
         agent.observe(reward=reward, terminal=terminal)

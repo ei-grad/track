@@ -7,6 +7,8 @@ http://www.iforce2d.net/b2dtut/top-down-car
 
 import math
 
+from Box2D import b2
+
 
 class TDTire(object):
 
@@ -138,7 +140,8 @@ class TDCar(object):
     def __init__(self, world, vertices=None,
                  tire_anchors=None, density=0.1,
                  position=(0, 0), angle=0.,
-                 tire_kwargs=None):
+                 tire_kwargs=None,
+                 rays=[]):
 
         self.world = world
 
@@ -178,6 +181,27 @@ class TDCar(object):
                 upperAngle=0,
             )
             joints.append(j)
+
+        self._rays = self.build_rays(rays)
+
+    def build_rays(self, rays):
+        ret = []
+        for i in rays:
+            input = b2.rayCastInput(p1=self.body.transform * i,
+                                    p2=self.body.worldCenter,
+                                    maxFraction=1)
+            output = b2.rayCastOutput()
+            self.body.fixtures[0].RayCast(output, input, 0)
+            ret.append((self.body.localCenter + i * (1. - output.fraction), i))
+        return ret
+
+    @property
+    def rays(self):
+        return [
+            (self.body.transform * a,
+             self.body.transform * b)
+            for a, b in self._rays
+        ]
 
     def update(self, keys, hz):
 
