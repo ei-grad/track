@@ -88,7 +88,7 @@ class App(b2.contactListener):
             45, -45,
             135, -135,
         ]
-        self.ray_length = 100.
+        self.ray_length = 200.
         self.rays = [
             b2.vec2(self.ray_length * math.sin(x),
                     self.ray_length * math.cos(x))
