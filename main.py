@@ -6,7 +6,7 @@ import math
 import os
 
 import numpy as np
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString
 
 import pygame
 
@@ -77,8 +77,6 @@ class App(b2.contactListener):
 
         paths, attributes = svg2paths(track_filename)
         self.svg_paths = {j['id']: i for i, j in zip(paths, attributes)}
-        track_start = self.svg_paths['track'].start
-        self.start_coord = Point(track_start.real, track_start.imag)
         self.lbound_linestring = traced_path(self.svg_paths['lbound'])
         self.rbound_linestring = traced_path(self.svg_paths['rbound'])
 
@@ -148,20 +146,20 @@ class App(b2.contactListener):
         pygame.init()
         self.screen = pygame.display.set_mode(self.size, pygame.HWSURFACE | pygame.DOUBLEBUF)
 
-    def init_car(self):
+    def init_car(self, angle=None):
 
         if self.car is not None:
             self.car.destroy()
 
-        # XXX: make random switch
-        # angle = np.random() * math.pi * 2.
-        p = self.checkpoints[1] - self.checkpoints[0]
-        angle = math.atan2(p.y, p.x) - math.pi / 2.
+        if angle is None:
+            # XXX: make random switch
+            # angle = np.random() * math.pi * 2.
+            p = self.checkpoints[1] - self.checkpoints[0]
+            angle = math.atan2(p.y, p.x) - math.pi / 2.
 
         self.car = TDCar(
             self.world,
-            position=b2.vec2(self.start_coord.x / self.ppm,
-                             (self.size[1] - self.start_coord.y) / self.ppm),
+            position=b2.vec2(self.checkpoints[0].x, self.checkpoints[0].y),
             angle=angle,
             tire_kwargs=dict(
                 dimensions=(0.2, 0.8),
@@ -177,8 +175,10 @@ class App(b2.contactListener):
         # self.car.tires[0].max_drive_force = self.car.tires[1].max_drive_force = 0
         # self.car.tires[2].max_drive_force = self.car.tires[3].max_drive_force = 0
 
-        self.car.next_checkpoint = 1
-        self.car.laps = 0
+        while (
+                self.checkpoints[self.car.next_checkpoint] - self.car.body.worldCenter
+        ).length < self.checkpoint_radius:
+            self.car.next_checkpoint += 1
 
     def check_events(self):
         for event in pygame.event.get():

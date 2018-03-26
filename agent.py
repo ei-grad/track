@@ -3,6 +3,10 @@
 from os import getenv
 import json
 import logging
+import random
+import math
+
+import numpy as np
 
 from tensorforce.agents import Agent
 
@@ -39,12 +43,18 @@ MAX_FRAMES_WITHOUT_REWARD = 200.
 
 while True:
     episode += 1
-    app.init_car()
+    # XXX: make random switch
+    app.checkpoints = app.checkpoints[::-1]
+    n = int(random.random() * len(app.checkpoints))
+    app.checkpoints = app.checkpoints[n:] + app.checkpoints[:n]
+    p = app.checkpoints[1] - app.checkpoints[0]
+    angle = math.atan2(p.y, p.x) - math.pi / 2.
+    angle += np.random.normal()
+    app.init_car(angle)
     frames_without_reward = 0
     terminal = False
     frames = 0
-    # XXX: make random switch
-    # app.checkpoints = app.checkpoints[::-1]
+    episode_total_reward = 0.
     while not terminal:
         frames += 1
         state = app.get_state()
@@ -53,19 +63,24 @@ while True:
         if reward:
             reward = 1. - frames_without_reward / MAX_FRAMES_WITHOUT_REWARD
             frames_without_reward = 0
-            logging.info('Episode#%d: checkpoint #%d on frame %d reward %.2f', episode,
-                         app.car.next_checkpoint - 1, frames, reward)
             if app.car.laps == 3:
                 terminal = True
-                logging.info('Episode#%d: finish on frame %d', episode, frames)
         else:
             frames_without_reward += 1
         app.clock.tick(0)
-        if frames % 20 == 0:
+        if episode % 20 == 0 or frames % 20 == 0:
             app.render()
         # if frames_without_reward > MAX_FRAMES_WITHOUT_REWARD or app.car.body.contacts:
         has_contact = any(i.contact.touching for i in app.car.body.contacts)
         if frames_without_reward > MAX_FRAMES_WITHOUT_REWARD or has_contact:
             terminal = True
-            reward = -1
+            reward = -1.
+        episode_total_reward += reward
         agent.observe(reward=reward, terminal=terminal)
+        if terminal:
+            logging.info(
+                'Episode#%d: frames=%04d checkpoint=%d lap=%d reward=%.2f',
+                episode, frames,
+                app.car.next_checkpoint, app.car.laps,
+                episode_total_reward,
+            )

@@ -152,10 +152,14 @@ class TDCar(object):
         self.body.CreatePolygonFixture(vertices=vertices, density=density, friction=0.9)
         self.body.userData = {'obj': self}
 
+        self.max_tires_angle = math.radians(40.)
+
         if tire_kwargs is None:
             tire_kwargs = {}
         self.tires = [
-            TDTire(self, position=self.body.transform * i, angle=angle,
+            TDTire(self,
+                   position=self.body.transform * i,
+                   angle=angle,
                    **tire_kwargs)
             for i in self.tire_anchors
         ]
@@ -183,6 +187,9 @@ class TDCar(object):
             joints.append(j)
 
         self._rays = self.build_rays(rays)
+
+        self.next_checkpoint = 0
+        self.laps = 0
 
     def build_rays(self, rays):
         ret = []
@@ -216,7 +223,7 @@ class TDCar(object):
             tire.update_drive(keys)
 
         # control steering
-        lock_angle = math.radians(40.)
+        lock_angle = self.max_tires_angle
         # from lock to lock in 0.5 sec
         turn_speed_per_sec = math.radians(160.)
         turn_per_timestep = turn_speed_per_sec / hz
