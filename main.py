@@ -310,6 +310,8 @@ class App(b2.contactListener):
         self.update(buttons)
         if checkpoint != self.car.next_checkpoint:
             return 1
+        if any(i.contact.touching for i in self.car.body.contacts):
+            return -1
         return 0
 
     def get_state(self):
