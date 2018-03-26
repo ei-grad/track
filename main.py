@@ -331,10 +331,13 @@ class App(b2.contactListener):
         # state[2] - angular speed
         ret.append(b.angularVelocity)
 
-        # state[3] - distance to checkpoint
+        # state[3] - tires angle
+        ret.append((self.car.tires[2].body.angle - b.angle) / self.car.max_tires_angle)
+
+        # state[4] - distance to checkpoint
         ret.append(min(cp.length - self.checkpoint_radius, self.ray_length) / self.ray_length)
 
-        # state[4] - angle to checkpoint
+        # state[5] - angle to checkpoint
         cp_angle = math.atan2(cp.y, cp.x)
         b_angle = (b.angle + math.pi / 2.) % (math.pi * 2.)
         if b_angle > math.pi:
@@ -343,6 +346,9 @@ class App(b2.contactListener):
         if angle > math.pi:
             angle = - (math.pi * 2 - angle)
         ret.append(angle / math.pi)
+
+        # state[6] - speed relative to checkpoint
+        ret.append(cp.dot(b.linearVelocity) / max_speed / cp.length)
 
         # distances to track boundary
         for p0, p1 in self.car.rays:
