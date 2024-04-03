@@ -5,3 +5,6 @@ pygame
 pygobject
 shapely
 svgpathtools
+tensorforce<0.5
+protobuf<3.21
+tensorflow==1.15.5
